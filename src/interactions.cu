@@ -40,6 +40,41 @@ __host__ __device__ glm::vec3 calculateRandomDirectionInHemisphere(
         + sin(around) * over * perpendicularDirection2;
 }
 
+__host__ __device__ glm::vec3 calculateRandomSpecularDirection(
+    glm::vec3 R,
+    float exponent,
+    thrust::default_random_engine& rng
+)
+{
+    thrust::uniform_real_distribution<float> u01(0, 1);
+
+    float theta = glm::acos(pow((double)(u01(rng)), (double)(1 / (exponent + 1))));
+    float phi = TWO_PI * u01(rng);
+
+    float x = cos(phi) * sin(theta);
+    float y = sin(phi) * sin(theta);
+    float z = cos(theta);
+
+    glm::vec3 directionNotR;
+    if (abs(R.x) < SQRT_OF_ONE_THIRD)
+    {
+        directionNotR = glm::vec3(1, 0, 0);
+    }
+    else if (abs(R.y) < SQRT_OF_ONE_THIRD)
+    {
+        directionNotR = glm::vec3(0, 1, 0);
+    }
+    else
+    {
+        directionNotR = glm::vec3(0, 0, 1);
+    }
+
+    glm::vec3 tangent = glm::normalize(glm::cross(R, directionNotR));
+    glm::vec3 bitangent = glm::normalize(glm::cross(R, tangent));
+
+    return x * tangent + y * bitangent + z * R;
+}
+
 __host__ __device__ void scatterRay(
     PathSegment & pathSegment,
     glm::vec3 intersect,
@@ -47,7 +82,25 @@ __host__ __device__ void scatterRay(
     const Material &m,
     thrust::default_random_engine &rng)
 {
-    // TODO: implement this.
-    // A basic implementation of pure-diffuse shading will just call the
-    // calculateRandomDirectionInHemisphere defined above.
+    if (m.hasReflective > 0.0f)
+    {
+        if (m.specular.exponent == INFINITY)
+        {
+            pathSegment.ray.direction = glm::reflect(pathSegment.ray.direction, normal);
+            pathSegment.ray.origin = intersect + pathSegment.ray.direction * EPSILON;
+        }
+        else
+        {
+            glm::vec3 R = glm::reflect(pathSegment.ray.direction, normal);
+
+            pathSegment.ray.direction = glm::normalize(calculateRandomSpecularDirection(R, m.specular.exponent, rng));
+            pathSegment.ray.origin = intersect + pathSegment.ray.direction * EPSILON;
+        }
+    }
+    else {
+        pathSegment.ray.direction = glm::normalize(calculateRandomDirectionInHemisphere(normal, rng));
+        pathSegment.ray.origin = intersect + normal * EPSILON;
+    }
+
+    pathSegment.remainingBounces--;
 }
